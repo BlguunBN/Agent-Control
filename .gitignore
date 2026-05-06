@@ -1,12 +1,21 @@
-# Local config and generated artifacts
+# ── Local config and generated artifacts ──────────────────────────────────────
 Agent-Control.settings.json
-Agent Control GUI.exe
 *.exe
 *.pdb
 *.dll
 *.cache
 *.log
 
-# Windows metadata
+# ── Windows metadata ──────────────────────────────────────────────────────────
 Thumbs.db
 Desktop.ini
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store

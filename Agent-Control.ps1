@@ -6,6 +6,7 @@ Add-Type -AssemblyName System.Drawing
 # ── App configuration ───────────────────────────────────────────────────────
 $script:AppRoot     = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $script:SettingsPath = Join-Path $script:AppRoot 'Agent-Control.settings.json'
+$script:SettingsWarnings = @()
 
 function Get-DefaultSettings {
     [pscustomobject]@{
@@ -27,11 +28,32 @@ function Load-AgentControlSettings {
     try {
         $raw = Get-Content -Path $script:SettingsPath -Raw -ErrorAction Stop
         $data = $raw | ConvertFrom-Json -ErrorAction Stop
-        if ($data.HermesDistro) { $settings.HermesDistro = [string]$data.HermesDistro }
-        if ($data.OpenClawPort) { $settings.OpenClawPort = [int]$data.OpenClawPort }
-        if ($data.AutoRefreshSeconds) { $settings.AutoRefreshSeconds = [int]$data.AutoRefreshSeconds }
+        $props = @($data.PSObject.Properties.Name)
+
+        if ($props -contains 'HermesDistro' -and $null -ne $data.HermesDistro -and [string]$data.HermesDistro -ne '') {
+            $settings.HermesDistro = [string]$data.HermesDistro
+        }
+
+        if ($props -contains 'OpenClawPort') {
+            $port = 0
+            if ([int]::TryParse([string]$data.OpenClawPort, [ref]$port) -and $port -ge 1 -and $port -le 65535) {
+                $settings.OpenClawPort = $port
+            } else {
+                $script:SettingsWarnings += "Invalid OpenClawPort '$($data.OpenClawPort)' in settings; using default $($settings.OpenClawPort)."
+            }
+        }
+
+        if ($props -contains 'AutoRefreshSeconds') {
+            $seconds = 0
+            if ([int]::TryParse([string]$data.AutoRefreshSeconds, [ref]$seconds) -and $seconds -ge 1 -and $seconds -le 3600) {
+                $settings.AutoRefreshSeconds = $seconds
+            } else {
+                $script:SettingsWarnings += "Invalid AutoRefreshSeconds '$($data.AutoRefreshSeconds)' in settings; using default $($settings.AutoRefreshSeconds)."
+            }
+        }
     } catch {
         # Leave defaults in place; the setup script can repair the file later.
+        $script:SettingsWarnings += "Failed to parse settings file; using defaults. $($_.Exception.Message)"
     }
     return $settings
 }
@@ -66,7 +88,7 @@ $distro        = Resolve-HermesDistro $script:Settings.HermesDistro
 $openClawPort  = if ($script:Settings.OpenClawPort) { [int]$script:Settings.OpenClawPort } else { 18789 }
 $autoRefreshSeconds = if ($script:Settings.AutoRefreshSeconds) { [int]$script:Settings.AutoRefreshSeconds } else { 15 }
 $autoRefreshMs = [Math]::Max(1000, $autoRefreshSeconds * 1000)
-if (-not (Test-Path $script:SettingsPath) -or -not $script:Settings.HermesDistro -or -not $script:Settings.OpenClawPort -or -not $script:Settings.AutoRefreshSeconds) {
+if (-not (Test-Path $script:SettingsPath)) {
     $script:Settings.HermesDistro = $distro
     $script:Settings.OpenClawPort = $openClawPort
     $script:Settings.AutoRefreshSeconds = $autoRefreshSeconds
@@ -123,7 +145,7 @@ function Invoke-Async {
     $job = Start-Job -ScriptBlock $Work -ArgumentList $WorkArgs
     $script:asyncJobs[$id] = @{ Job = $job; Done = $Done }
     $poll          = New-Object System.Windows.Forms.Timer
-    $poll.Interval = 300
+    $poll.Interval = 500
     $poll.Tag      = $id
     $poll.Add_Tick({
         param($sender, $e)
@@ -171,15 +193,43 @@ function Refresh-Hermes {
     $wsl = $wslExe; $dist = $distro
     Invoke-Async -Work {
         param($exe, $d)
-        $proc = & $exe -d $d -- bash -lc 'systemctl --user is-active hermes-gateway' 2>&1
-        $exit = $LASTEXITCODE
-        [pscustomobject]@{ ExitCode = $exit; Output = ($proc | Out-String).Trim() }
+        $maxRetries = 2; $retryDelay = 2
+        $wslReady = $true; $exit = 1; $output = ''
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            $proc = & $exe -d $d -- bash -lc 'systemctl --user is-active hermes-gateway' 2>&1
+            $exit = $LASTEXITCODE
+            $output = (($proc | Out-String) -replace "`0", '').Trim()
+            if ($output -match '(?i)failed to attach disk|access is denied|createinstance|mountdisk') {
+                $wslReady = $false; break
+            }
+            if ($exit -eq 0 -or $output -eq 'active') { break }
+            Start-Sleep -Seconds $retryDelay
+        }
+        # Get restart count to detect crash loops
+        $nRestarts = 0
+        if ($wslReady) {
+            $nrOut = & $exe -d $d -- bash -lc 'systemctl --user show hermes-gateway -p NRestarts --value' 2>&1
+            if ($nrOut -match '(\d+)') { $nRestarts = [int]$Matches[1] }
+        }
+        [pscustomobject]@{
+            ExitCode  = $exit
+            Output    = $output
+            WslReady  = $wslReady
+            NRestarts = $nRestarts
+        }
     } -WorkArgs @($wsl, $dist) -Done {
         param($res)
         $script:hermesRefreshBusy = $false
         $r = if ($res) { $res[0] } else { $null }
         if (-not $r) { Set-HermesState 'Unknown' $C.Orange; return }
-        if ($r.ExitCode -eq 0 -and $r.Output -eq 'active') { Set-HermesState 'Active (systemd)' $C.Green }
+        if (-not $r.WslReady) { Set-HermesState 'WSL unavailable' $C.Red; return }
+        if ($r.ExitCode -eq 0 -and $r.Output -eq 'active') {
+            if ($r.NRestarts -ge 5) {
+                Set-HermesState "Crash-looping ($($r.NRestarts) restarts)" $C.Orange
+            } else {
+                Set-HermesState 'Active (systemd)' $C.Green
+            }
+        }
         elseif ($r.Output -match '(?i)inactive|failed|dead|stopped') { Set-HermesState 'Not active' $C.Red }
         else { Set-HermesState 'Unknown' $C.Orange }
     }
@@ -190,9 +240,52 @@ function Get-OpenClawListener {
     $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $conn) { return $null }
     $owner = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+    $ownerPath = $null
+    try { $ownerPath = $owner.Path } catch {}
+    $cmdLine = $null
+    try {
+        $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($conn.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($procInfo) { $cmdLine = $procInfo.CommandLine }
+    } catch {}
     [pscustomobject]@{
         Pid         = $conn.OwningProcess
         ProcessName = if ($owner) { $owner.ProcessName } else { $null }
+        Path        = $ownerPath
+        CommandLine = $cmdLine
+    }
+}
+
+function Test-OpenClawOwnedProcess {
+    param([pscustomobject]$Listener)
+    if (-not $Listener) { return $false }
+
+    $name = if ($Listener.ProcessName) { $Listener.ProcessName.ToLowerInvariant() } else { '' }
+    $cmd  = if ($Listener.CommandLine) { $Listener.CommandLine.ToLowerInvariant() } else { '' }
+    $path = if ($Listener.Path) { $Listener.Path.ToLowerInvariant() } else { '' }
+
+    if ($cmd -match 'openclaw') { return $true }
+    if ($path -match 'openclaw') { return $true }
+    if (($name -eq 'openclaw') -or ($name -eq 'openclaw.exe')) { return $true }
+    if ($name -eq 'node' -and $cmd -match 'gateway') { return $true }
+    return $false
+}
+
+function Get-EnvironmentDiagnostics {
+    $wslExists = Test-Path $wslExe
+    $cmdExists = Test-Path $cmdExe
+    $openClawCli = $false
+    if ($cmdExists) {
+        try {
+            $null = & $cmdExe /c 'where openclaw' 2>$null
+            $openClawCli = ($LASTEXITCODE -eq 0)
+        } catch {
+            $openClawCli = $false
+        }
+    }
+    [pscustomobject]@{
+        WslExeFound     = $wslExists
+        CmdExeFound     = $cmdExists
+        OpenClawCliFound = $openClawCli
     }
 }
 
@@ -236,12 +329,28 @@ function Start-Hermes {
         param($exe, $d)
         $proc = & $exe -d $d -- bash -lc 'systemctl --user start hermes-gateway' 2>&1
         $exit = $LASTEXITCODE
-        [pscustomobject]@{ ExitCode = $exit; Output = ($proc | Out-String).Trim() }
+        $output = (($proc | Out-String) -replace "`0", '').Trim()
+        $wslReady = $true
+        if ($exit -ne 0 -and $output -match '(?i)failed to attach disk|access is denied|createinstance|mountdisk') {
+            $wslReady = $false
+        }
+        [pscustomobject]@{
+            ExitCode = $exit
+            Output   = $output
+            WslReady = $wslReady
+        }
     } -WorkArgs @($wsl, $dist) -Done {
         param($res)
         $r = if ($res) { $res[0] } else { $null }
-        if ($r -and $r.ExitCode -eq 0) { Add-Log 'Hermes gateway is active (systemd).' }
-        else { Add-Log "Hermes gateway start failed: $(if ($r) { $r.Output } else { 'no result' })" }
+        if ($r -and $r.ExitCode -eq 0) {
+            Add-Log 'Hermes start sent; verifying status...'
+        }
+        elseif ($r -and -not $r.WslReady) {
+            Add-Log "Hermes gateway start failed: WSL distro '$dist' is unavailable. $($r.Output)"
+        }
+        else {
+            Add-Log "Hermes gateway start failed: $(if ($r) { $r.Output } else { 'no result' })"
+        }
         Refresh-Hermes
     }
 }
@@ -254,17 +363,40 @@ function Stop-Hermes {
         param($exe, $d)
         $proc = & $exe -d $d -- bash -lc 'systemctl --user stop hermes-gateway' 2>&1
         $exit = $LASTEXITCODE
-        [pscustomobject]@{ ExitCode = $exit; Output = ($proc | Out-String).Trim() }
+        $output = (($proc | Out-String) -replace "`0", '').Trim()
+        $wslReady = $true
+        if ($exit -ne 0 -and $output -match '(?i)failed to attach disk|access is denied|createinstance|mountdisk') {
+            $wslReady = $false
+        }
+        [pscustomobject]@{
+            ExitCode = $exit
+            Output   = $output
+            WslReady = $wslReady
+        }
     } -WorkArgs @($wsl, $dist) -Done {
         param($res)
         $r = if ($res) { $res[0] } else { $null }
-        if ($r -and $r.ExitCode -eq 0) { Add-Log 'Hermes gateway is not active.' }
-        else { Add-Log "Hermes gateway stop failed: $(if ($r) { $r.Output } else { 'no result' })" }
+        if ($r -and $r.ExitCode -eq 0) {
+            Add-Log 'Hermes gateway stopped successfully.'
+        }
+        elseif ($r -and -not $r.WslReady) {
+            Add-Log "Hermes gateway stop failed: WSL distro '$dist' is unavailable. $($r.Output)"
+        }
+        else {
+            Add-Log "Hermes gateway stop failed: $(if ($r) { $r.Output } else { 'no result' })"
+        }
         Refresh-Hermes
     }
 }
 
 function Start-OpenClaw {
+    # Verify CLI is available first
+    $null = & $cmdExe /c 'where openclaw' 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Add-Log 'OpenClaw CLI not found in PATH. Cannot start.'
+        Set-OpenClawState 'CLI missing' $C.Red
+        return
+    }
     $port = $openClawPort; $cmd = $cmdExe
     $listener = Get-OpenClawListener -Port $port
     if ($listener) {
@@ -315,20 +447,49 @@ function Stop-OpenClaw {
     Invoke-Async -Work {
         param($c, $p)
         $logs = [System.Collections.Generic.List[string]]::new()
+        function Get-Listener([int]$Port) {
+            $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $conn) { return $null }
+            $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+            $procName = if ($proc) { $proc.ProcessName } else { $null }
+            $cmdLine = $null
+            try {
+                $w = Get-CimInstance Win32_Process -Filter "ProcessId = $($conn.OwningProcess)" -ErrorAction SilentlyContinue
+                if ($w) { $cmdLine = $w.CommandLine }
+            } catch {}
+            [pscustomobject]@{
+                Pid         = $conn.OwningProcess
+                ProcessName = $procName
+                CommandLine = $cmdLine
+            }
+        }
+        function Is-ExpectedGateway($l) {
+            if (-not $l) { return $false }
+            $name = if ($l.ProcessName) { $l.ProcessName.ToLowerInvariant() } else { '' }
+            $cmdLine = if ($l.CommandLine) { $l.CommandLine.ToLowerInvariant() } else { '' }
+            if ($cmdLine -match 'openclaw') { return $true }
+            if (($name -eq 'openclaw') -or ($name -eq 'openclaw.exe')) { return $true }
+            if ($name -eq 'node' -and $cmdLine -match 'gateway') { return $true }
+            return $false
+        }
         try {
             # Stop the scheduled task so it does not auto-restart
             $taskOut = & $c /c 'openclaw gateway stop' 2>&1
             $logs.Add("Task stop: $(($taskOut | Out-String).Trim())")
             # Kill the detached node process that openclaw gateway stop leaves alive
-            $conn = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($conn) {
-                $killOut = & $c /c "taskkill /F /PID $($conn.OwningProcess) /T" 2>&1 | Out-String
-                $killOut.Trim() -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $logs.Add($_) }
+            $listener2 = Get-Listener -Port $p
+            if ($listener2) {
+                if (-not (Is-ExpectedGateway $listener2)) {
+                    $logs.Add("Safety stop: process on port $p does not look like OpenClaw (PID $($listener2.Pid), name '$($listener2.ProcessName)'). Skipping kill.")
+                } else {
+                    $killOut = & $c /c "taskkill /F /PID $($listener2.Pid) /T" 2>&1 | Out-String
+                    $killOut.Trim() -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $logs.Add($_) }
+                }
                 Start-Sleep -Seconds 1
-                $conn = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+                $listener2 = Get-Listener -Port $p
             }
         } catch { $logs.Add("Error: $($_.Exception.Message)") }
-        [pscustomobject]@{ Logs = $logs.ToArray(); StillRunning = ($null -ne $conn) }
+        [pscustomobject]@{ Logs = $logs.ToArray(); StillRunning = ($null -ne $listener2) }
     } -WorkArgs @($cmd, $port) -Done {
         param($res)
         $r = if ($res) { $res[0] } else { $null }
@@ -505,7 +666,7 @@ function Add-CardContent {
     @{ Dot = $dot; Status = $lStatus }
 }
 
-$hermesWidgets   = Add-CardContent $cardH  'HERMES'   'WSL Ubuntu  ·  systemd service'
+$hermesWidgets   = Add-CardContent $cardH  'HERMES'   "WSL $distro  ·  systemd service"
 $openClawWidgets = Add-CardContent $cardOC 'OPENCLAW' "Windows  ·  TCP :$openClawPort"
 
 $script:hermesDot           = $hermesWidgets.Dot
@@ -637,6 +798,7 @@ $logPanel.Controls.Add($logBox)
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = $autoRefreshMs
 $timer.Add_Tick({
+    if ($form.WindowState -eq 'Minimized') { return }
     Refresh-Hermes
     Refresh-OpenClaw
 })
@@ -645,6 +807,9 @@ $timer.Start()
 # ── Startup ───────────────────────────────────────────────────────────────────
 $form.Add_Shown({
     Add-Log "Ready.  Auto-refresh every $autoRefreshSeconds s."
+    foreach ($warning in $script:SettingsWarnings) { Add-Log "Settings warning: $warning" }
+    $diag = Get-EnvironmentDiagnostics
+    Add-Log "Diagnostics: wsl.exe $(if ($diag.WslExeFound) { 'found' } else { 'missing' }), cmd.exe $(if ($diag.CmdExeFound) { 'found' } else { 'missing' }), openclaw CLI $(if ($diag.OpenClawCliFound) { 'found' } else { 'missing' })."
 
     Refresh-Hermes
     Refresh-OpenClaw

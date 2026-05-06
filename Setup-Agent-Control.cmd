@@ -2,4 +2,5 @@
 setlocal
 set "PWSH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%PWSH%" set "PWSH=powershell.exe"
-start "Agent Control Setup" "%PWSH%" -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0Setup-Agent-Control.ps1" %*
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Setup-Agent-Control.ps1" %*
+pause
