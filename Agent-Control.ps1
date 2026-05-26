@@ -401,7 +401,8 @@ function Update-TrayState {
     $oldIcon = $script:trayIcon.Icon
     $newIcon = New-TrayStatusIcon $color
     $script:trayIcon.Icon = $newIcon
-    if ($oldIcon) { $oldIcon.Dispose() }
+    # Note: intentionally not disposing oldIcon to avoid interfering with $form.Icon
+    # (tiny icons, GC handles them fine)
 }
 
 function Set-StartupWithWindows {
@@ -1257,10 +1258,21 @@ $script:mainTimer.Add_Tick({
 $script:mainTimer.Start()
 
 # ── System tray ───────────────────────────────────────────────────────────────
+# Load custom icon if available, fallback to system icon
+$iconPath = Join-Path $script:AppRoot 'Agent-Control-Icon.ico'
+$script:appIcon = if (Test-Path $iconPath) {
+    New-Object System.Drawing.Icon($iconPath)
+} else {
+    [System.Drawing.SystemIcons]::Application
+}
+
 $script:trayIcon = New-Object System.Windows.Forms.NotifyIcon
-$script:trayIcon.Icon    = [System.Drawing.SystemIcons]::Application
+$script:trayIcon.Icon    = $script:appIcon
 $script:trayIcon.Text    = 'Agent Control'
 $script:trayIcon.Visible = $true
+
+# Also set the window icon
+$form.Icon = $script:appIcon
 
 $trayMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $trayMenu.BackColor = $C.BgCard; $trayMenu.ForeColor = $C.TxtPri
@@ -1355,8 +1367,9 @@ $form.Add_Shown({
 $form.Add_FormClosed({
     $script:mainTimer.Stop(); $script:mainTimer.Dispose()
     $script:trayIcon.Visible = $false
-    if ($script:trayIcon.Icon) { $script:trayIcon.Icon.Dispose() }
     $script:trayIcon.Dispose()
+    # Dispose the shared app icon once (both tray and form reference it)
+    if ($script:appIcon) { $script:appIcon.Dispose() }
 })
 
 # Start minimized to tray if requested
