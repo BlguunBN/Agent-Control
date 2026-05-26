@@ -19,15 +19,21 @@
 
 ## ✨ Features
 
-- 🎛️ **Dual-agent control** — Start/Stop/Status for both Hermes and OpenClaw in one window
+- 🎛️ **Dual-agent control** — Start/Stop/**Restart**/Status for both Hermes and OpenClaw in one window
 - 🔍 **Smart auto-detection** — Auto-discovers WSL distros, Hermes installation, and OpenClaw CLI
 - 🩺 **Crash-loop detection** — Detects when Hermes is restart-cycling and warns you (orange) instead of showing a false green "Active"
 - 🕒 **Auto-refresh** — Updates status every 15s (configurable). Pauses when minimized
 - 🎨 **OLED dark theme** — Easy on the eyes, matches modern terminal aesthetics
-- 📋 **Live log panel** — Timestamped activity log for all actions
+- 📋 **Live log panel** — Timestamped activity log for all actions + **export to file**
 - 🔒 **Safety checks** — Validates port-owning processes before killing, guards against missing CLIs
 - 🪶 **Lightweight** — Pure PowerShell 5.1 with Windows Forms. No dependencies to install
 - 🚀 **One-click setup** — `Setup-Agent-Control.ps1` detects, installs, and configures everything
+- ⚙️ **In-app settings** — Change WSL distro, port, and refresh interval without editing JSON
+- 🔔 **System tray** — Minimize to tray; balloon notifications on status changes. Tray icon changes color dynamically (green=all good, orange=warning, red=down). Hover tooltip shows live agent states. Right-click menu includes quick actions and a Settings shortcut.
+- 🏁 **Start with Windows** — Optional auto-start minimized to tray on Windows login
+- 🩺 **HTTP health check** — OpenClaw status verifies gateway HTTP response, not just TCP port
+- 🏷️ **Version detection** — Auto-detects and shows installed Hermes and OpenClaw versions
+- ⌨️ **Keyboard shortcuts** — F5 = Refresh All, Ctrl+L = Clear log
 
 ## 📸 Preview
 
@@ -42,8 +48,8 @@
 │  │                  │  │                  │                 │
 │  │ Active (systemd) │  │ Listening on     │                 │
 │  │                  │  │ :18789 (node)    │                 │
-│  │ [Start][Stop]    │  │ [Start][Stop]    │                 │
-│  │ [Status]         │  │ [Status]         │                 │
+│  │ [Start]  [Stop]  │  │ [Start]  [Stop]  │                 │
+│  │ [Status] [Restart]  [Status] [Restart] │                 │
 │  └──────────────────┘  └──────────────────┘                 │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │ [Start Both] [Stop Both] [Refresh All] [Auto: ON]   │   │
@@ -102,10 +108,20 @@ Installs everything missing without asking — useful for provisioning new machi
 | **Start** | Starts the selected agent |
 | **Stop** | Stops the selected agent |
 | **Status** | Refreshes the selected agent's status |
+| **Restart** | Stops then starts the selected agent in one click |
 | **Start Both** | Starts Hermes + OpenClaw in sequence |
 | **Stop Both** | Stops OpenClaw + Hermes in sequence |
 | **Refresh All** | Refreshes both agent statuses |
 | **Auto: ON/OFF** | Toggles the auto-refresh timer |
+| **Settings** | Opens in-app settings dialog |
+| **Export** (log) | Saves the current log to a .txt file |
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| **F5** | Refresh all statuses |
+| **Ctrl+L** | Clear the log |
 
 ### Status indicators
 
@@ -127,7 +143,8 @@ Settings are stored in `Agent-Control.settings.json` (auto-created in the app fo
 {
     "HermesDistro":       "Ubuntu",
     "OpenClawPort":       18789,
-    "AutoRefreshSeconds": 15
+    "AutoRefreshSeconds": 15,
+    "StartWithWindows":   false
 }
 ```
 
@@ -136,6 +153,7 @@ Settings are stored in `Agent-Control.settings.json` (auto-created in the app fo
 | `HermesDistro` | `Ubuntu` | WSL distro name where Hermes is installed |
 | `OpenClawPort` | `18789` | TCP port to watch for OpenClaw |
 | `AutoRefreshSeconds` | `15` | Status refresh interval (1–3600) |
+| `StartWithWindows` | `false` | Auto-start minimized to tray on Windows login |
 
 ### Override via environment
 
