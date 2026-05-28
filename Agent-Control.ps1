@@ -1349,10 +1349,16 @@ $form.Add_KeyDown({
 
 # ── Startup ────────────────────────────────────────────────────────────────────
 $form.Add_Shown({
-    Add-Log "Ready.  Auto-refresh every $($script:autoRefreshSeconds)s.  F5 = refresh  ·  Ctrl+L = clear log"
     if ($StartMinimized) {
+        # Already minimized by WindowState; Resize event will hide to tray.
+        # Show startup balloon only once.
+        if (-not $script:hideHintShown) {
+            $script:trayIcon.ShowBalloonTip(2000, 'Agent Control', 'Running in the system tray. Double-click to open.', 'Info')
+            $script:hideHintShown = $true
+        }
         Add-Log 'Started minimized to system tray.'
     }
+    Add-Log "Ready.  Auto-refresh every $($script:autoRefreshSeconds)s.  F5 = refresh  ·  Ctrl+L = clear log"
     foreach ($warning in $script:SettingsWarnings) { Add-Log "Settings warning: $warning" }
     $diag = Get-EnvironmentDiagnostics
     Add-Log ("Diagnostics: wsl.exe $(if ($diag.WslExeFound) {'found'} else {'MISSING'}), " +
@@ -1375,12 +1381,8 @@ $form.Add_FormClosed({
 # Start minimized to tray if requested
 if ($StartMinimized) {
     $form.WindowState = 'Minimized'
-    $form.Hide()
-    # Only show startup balloon once (first ever run of the session)
-    if (-not $script:hideHintShown) {
-        $script:trayIcon.ShowBalloonTip(2000, 'Agent Control', 'Running in the system tray. Double-click to open.', 'Info')
-        $script:hideHintShown = $true
-    }
+    # Do NOT call $form.Hide() here. Let the Resize event handle it after
+    # Application.Run() shows the form. The message loop keeps the process alive.
 }
 
-[void]$form.ShowDialog()
+[System.Windows.Forms.Application]::Run($form)
