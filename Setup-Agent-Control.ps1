@@ -80,7 +80,8 @@ function Read-Choice {
     $prompt = $Question
     $choices = @()
     for ($i = 0; $i -lt $Options.Count; $i++) {
-        $label = if ($i -eq 0) { "&$($i+1) $($Options[$i])" } else { "&$($i+1) $($Options[$i])" }
+        $accelerator = '&' + ($i + 1)
+        $label = if ($i -eq 0) { "$accelerator $($Options[$i])" } else { "$accelerator $($Options[$i])" }
         $choices += New-Object System.Management.Automation.Host.ChoiceDescription($label, $Options[$i])
     }
     $result = $Host.UI.PromptForChoice($title, $prompt, $choices, 0)
@@ -99,7 +100,7 @@ Write-Host "╚═════════════════════�
 Write-Step "Checking system..."
 $os = Get-CimInstance Win32_OperatingSystem
 $Detected.OsVersion = $os.Version
-Write-Info "Windows $($os.Caption) — Build $($os.Version)"
+Write-Info "Windows $($os.Caption) - Build $($os.Version)"
 if ($os.Version -lt '10.0.22000') {
     Write-Warn "Windows 11 or Windows 10 22H2+ recommended for WSL2."
 }
@@ -151,7 +152,7 @@ if ($Detected.WslDistros.Count -gt 0) {
         Write-Info "Checking '$distro'..."
 
         # Check 1: Is the hermes CLI installed?
-        $hermesCheck = & $wslExe -d $distro -- bash -lc 'command -v hermes 2>/dev/null && hermes --version 2>/dev/null || echo "NOT_FOUND"' 2>$null
+        $hermesCheck = & $wslExe -d $distro -- bash -lc 'command -v hermes 2>/dev/null; hermes --version 2>/dev/null || echo "NOT_FOUND"' 2>$null
         $hasCli = ($LASTEXITCODE -eq 0) -and ($hermesCheck -notmatch 'NOT_FOUND')
 
         if (-not $hasCli) {
@@ -343,7 +344,7 @@ if ($anythingMissing) {
                         Write-Host "   Enabling gateway service..." -NoNewline
                         & $wslExe -d $targetDistro -- bash -lc 'systemctl --user enable hermes-gateway 2>/dev/null; systemctl --user start hermes-gateway 2>/dev/null' 2>$null
                         Write-Host " Done" -ForegroundColor Green
-                        Write-Info "Gateway enabled. You should now configure:")
+                        Write-Info "Gateway enabled. You should now configure:"
                         Write-Info "  1. Run: hermes model"
                         Write-Info "  2. Set up your Telegram bot token"
                         Write-Info "  3. Run: hermes gateway setup"

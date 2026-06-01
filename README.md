@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/status-active-brightgreen" alt="Status">
-  <img src="https://img.shields.io/github/license/bilguun0208/agent-control" alt="License">
+  <img src="https://img.shields.io/github/license/BlguunBN/Agent-Control" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20WSL-blue" alt="Platform">
   <img src="https://img.shields.io/badge/powershell-5.1%2B-5391FE" alt="PowerShell">
   <br>
@@ -70,7 +70,7 @@
 ### Option 1: One-click setup (recommended)
 
 ```cmd
-git clone https://github.com/bilguun0208/agent-control.git
+git clone https://github.com/BlguunBN/Agent-Control.git
 cd agent-control
 Setup-Agent-Control.cmd
 ```
@@ -259,6 +259,6 @@ MIT — do whatever you want with it.
 
 <p align="center">
   Built because clicking Start/Stop in a terminal is boring.<br>
-  <a href="https://github.com/bilguun0208/agent-control/issues">Report an issue</a> ·
-  <a href="https://github.com/bilguun0208/agent-control/discussions">Start a discussion</a>
+  <a href="https://github.com/BlguunBN/Agent-Control/issues">Report an issue</a> ·
+  <a href="https://github.com/BlguunBN/Agent-Control/discussions">Start a discussion</a>
 </p>

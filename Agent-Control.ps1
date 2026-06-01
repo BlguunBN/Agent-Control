@@ -70,7 +70,16 @@ function Load-AgentControlSettings {
         if ($props -contains 'StartWithWindows') {
             $sw = $data.StartWithWindows
             if ($sw -is [bool]) { $settings.StartWithWindows = $sw }
-            elseif ($sw -is [string]) { $settings.StartWithWindows = [bool]::Parse($sw) }
+            elseif ($sw -is [string]) {
+                $parsed = $false
+                if ([bool]::TryParse($sw, [ref]$parsed)) {
+                    $settings.StartWithWindows = $parsed
+                } else {
+                    $script:SettingsWarnings += "Invalid StartWithWindows '$sw'; using default $($settings.StartWithWindows)."
+                }
+            } else {
+                $script:SettingsWarnings += "Invalid StartWithWindows '$sw'; using default $($settings.StartWithWindows)."
+            }
         }
     } catch {
         $script:SettingsWarnings += "Failed to parse settings file; using defaults. $($_.Exception.Message)"
@@ -94,6 +103,8 @@ function Resolve-HermesDistro {
     $distros = @(Get-WslDistroNames)
     if ($Preferred -and ($distros -contains $Preferred))              { return $Preferred }
     if ($env:HERMES_WSL_DISTRO -and ($distros -contains $env:HERMES_WSL_DISTRO)) { return $env:HERMES_WSL_DISTRO }
+    $hermesNamed = @($distros | Where-Object { $_ -match '(?i)hermes' })
+    if ($hermesNamed.Count -ge 1) { return $hermesNamed[0] }
     if ($distros -contains 'Ubuntu') { return 'Ubuntu' }
     if ($distros.Count -ge 1)        { return $distros[0] }
     if ($Preferred) { return $Preferred }
@@ -398,6 +409,7 @@ function Update-TrayState {
     if ($script:trayHermesItem) { $script:trayHermesItem.Text = "Hermes: $hShort" }
     if ($script:trayOpenClawItem) { $script:trayOpenClawItem.Text = "OpenClaw: $oShort" }
 
+    $color = Get-TrayStatusColor
     $oldIcon = $script:trayIcon.Icon
     $newIcon = New-TrayStatusIcon $color
     $script:trayIcon.Icon = $newIcon
