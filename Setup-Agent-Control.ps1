@@ -81,7 +81,7 @@ function Read-Choice {
     $choices = @()
     for ($i = 0; $i -lt $Options.Count; $i++) {
         $accelerator = '&' + ($i + 1)
-        $label = if ($i -eq 0) { "$accelerator $($Options[$i])" } else { "$accelerator $($Options[$i])" }
+        $label = "$accelerator $($Options[$i])"
         $choices += New-Object System.Management.Automation.Host.ChoiceDescription($label, $Options[$i])
     }
     $result = $Host.UI.PromptForChoice($title, $prompt, $choices, 0)
@@ -152,7 +152,7 @@ if ($Detected.WslDistros.Count -gt 0) {
         Write-Info "Checking '$distro'..."
 
         # Check 1: Is the hermes CLI installed?
-        $hermesCheck = & $wslExe -d $distro -- bash -lc 'command -v hermes 2>/dev/null; hermes --version 2>/dev/null || echo "NOT_FOUND"' 2>$null
+        $hermesCheck = & $wslExe -d $distro -- bash -lc 'command -v hermes 2>/dev/null && hermes --version 2>/dev/null || echo "NOT_FOUND"' 2>$null
         $hasCli = ($LASTEXITCODE -eq 0) -and ($hermesCheck -notmatch 'NOT_FOUND')
 
         if (-not $hasCli) {

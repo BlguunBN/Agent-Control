@@ -99,6 +99,70 @@ Installs everything missing without asking — useful for provisioning new machi
 3. Install [OpenClaw](https://github.com/openclaw) on Windows
 4. Run `Setup-Agent-Control.cmd` (or just launch `Agent-Control.cmd`)
 
+## 🤖 Set Up with an AI Agent
+
+Paste the prompt below into any AI coding assistant (Claude Code, GitHub Copilot, Cursor, etc.) and it will walk you through the full installation — detecting what you have, installing what you need, and launching the app.
+
+````markdown
+I want to set up **Agent Control** on my Windows machine — a GUI control panel for managing Hermes (WSL) and OpenClaw (Windows) AI agents.
+
+Repo: https://github.com/BlguunBN/Agent-Control
+
+Please help me through the setup end-to-end:
+
+1. **Clone the repo** (if I haven't already):
+   ```cmd
+   git clone https://github.com/BlguunBN/Agent-Control.git
+   cd Agent-Control
+   ```
+
+2. **Run the setup script** — it auto-detects everything:
+   ```cmd
+   Setup-Agent-Control.cmd
+   ```
+   Or fully automatic (no prompts):
+   ```cmd
+   Setup-Agent-Control.cmd -AutoInstall
+   ```
+
+3. **What the setup checks for:**
+   - Windows 10/11 with WSL2
+   - A WSL Linux distro (Ubuntu recommended) with Hermes installed (`hermes --version`)
+   - OpenClaw on Windows (`npm install -g openclaw`)
+   - Node.js (required by OpenClaw)
+
+4. **If anything is missing**, guide me through installing it:
+   - WSL2: `wsl --install` (requires restart)
+   - Hermes in WSL: follow the official Hermes install script inside the distro
+   - OpenClaw: `npm install -g openclaw`
+   - Node.js: download from https://nodejs.org
+
+5. **Settings file** (`Agent-Control.settings.json`, auto-created):
+   ```json
+   {
+       "HermesDistro":       "Ubuntu",
+       "OpenClawPort":       18789,
+       "AutoRefreshSeconds": 15,
+       "StartWithWindows":   false
+   }
+   ```
+   If my WSL distro has a different name (run `wsl --list --quiet` to check), update `HermesDistro` to match. If my distro name contains "hermes", it will be auto-selected.
+
+6. **Launch the app** once setup is complete:
+   ```cmd
+   Agent-Control.cmd
+   ```
+   Or double-click `Agent Control GUI.exe` for a no-window launch that starts minimized to the system tray.
+
+7. **Common problems to check if something isn't working:**
+   - Hermes shows "Active" but crash-looping → check `wsl -d Ubuntu -- systemctl --user show hermes-gateway -p NRestarts --value`; reset with `systemctl --user reset-failed hermes-gateway`
+   - OpenClaw not detected → run `where openclaw` in cmd; reinstall with `npm install -g openclaw`
+   - "Access is denied" stopping OpenClaw → relaunch Agent Control as Administrator
+   - Tray icon missing → the app may be minimized; check the system tray overflow area
+
+Please check my system, run the relevant commands, and fix any issues you find.
+````
+
 ## 🖱️ Usage
 
 ### Controls

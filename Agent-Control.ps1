@@ -75,10 +75,11 @@ function Load-AgentControlSettings {
                 if ([bool]::TryParse($sw, [ref]$parsed)) {
                     $settings.StartWithWindows = $parsed
                 } else {
-                    $script:SettingsWarnings += "Invalid StartWithWindows '$sw'; using default $($settings.StartWithWindows)."
+                    $script:SettingsWarnings += "Invalid StartWithWindows string '$sw'; using default $($settings.StartWithWindows)."
                 }
             } else {
-                $script:SettingsWarnings += "Invalid StartWithWindows '$sw'; using default $($settings.StartWithWindows)."
+                $typeName = if ($null -eq $sw) { 'null' } else { $sw.GetType().Name }
+                $script:SettingsWarnings += "Invalid StartWithWindows type '$typeName'; using default $($settings.StartWithWindows)."
             }
         }
     } catch {
@@ -103,7 +104,7 @@ function Resolve-HermesDistro {
     $distros = @(Get-WslDistroNames)
     if ($Preferred -and ($distros -contains $Preferred))              { return $Preferred }
     if ($env:HERMES_WSL_DISTRO -and ($distros -contains $env:HERMES_WSL_DISTRO)) { return $env:HERMES_WSL_DISTRO }
-    $hermesNamed = @($distros | Where-Object { $_ -match '(?i)hermes' })
+    $hermesNamed = @($distros | Where-Object { $_ -match 'hermes' })
     if ($hermesNamed.Count -ge 1) { return $hermesNamed[0] }
     if ($distros -contains 'Ubuntu') { return 'Ubuntu' }
     if ($distros.Count -ge 1)        { return $distros[0] }
