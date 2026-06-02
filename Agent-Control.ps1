@@ -95,8 +95,11 @@ $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powe
 
 function Get-WslDistroNames {
     if (-not (Test-Path $wslExe)) { return @() }
+    $prevEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
     try { @(& $wslExe -l -q 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
     catch { @() }
+    finally { [Console]::OutputEncoding = $prevEncoding }
 }
 
 function Resolve-HermesDistro {

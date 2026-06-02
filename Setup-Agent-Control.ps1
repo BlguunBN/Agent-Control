@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Agent-Control'),
     [string]$HermesDistro,
@@ -33,7 +33,7 @@ $sourceDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 $wslExe    = Join-Path $env:SystemRoot 'System32\wsl.exe'
 
 # ── UI helpers ─────────────────────────────────────────────────────────────────
-$Host.UI.RawUI.ForegroundColor = $null  # reset
+try { [System.Console]::ResetColor() } catch {}
 
 function Write-Step {
     param([string]$Message, [string]$Color = 'White')
@@ -121,7 +121,10 @@ if (Test-Path $wslExe) {
     if ($Detected.IsWslInstalled) {
         Write-Ok "WSL is present."
         # Get distros
+        $prevEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
         $distros = @(& $wslExe -l -q 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne 'docker-desktop' -and $_ -ne 'docker-desktop-data' })
+        [Console]::OutputEncoding = $prevEncoding
         $Detected.WslDistros = $distros
         if ($distros.Count -gt 0) {
             Write-Ok "WSL distros: $($distros -join ', ')"
@@ -189,8 +192,8 @@ if ($Detected.WslDistros.Count -gt 0) {
 Write-Step "Checking for OpenClaw..."
 
 $openclawPaths = @(
-    (Get-Command 'openclaw' -ErrorAction SilentlyContinue).Source,
-    (Get-Command 'openclaw.cmd' -ErrorAction SilentlyContinue).Source,
+    $(if ($c = Get-Command 'openclaw'     -ErrorAction SilentlyContinue) { $c.Source }),
+    $(if ($c = Get-Command 'openclaw.cmd' -ErrorAction SilentlyContinue) { $c.Source }),
     (Join-Path $env:APPDATA 'npm\openclaw.cmd'),
     (Join-Path $env:APPDATA 'npm\openclaw'),
     (Join-Path $env:LOCALAPPDATA 'npm\openclaw.cmd'),
@@ -222,7 +225,7 @@ if (-not $Detected.OpenClawFound) {
 Write-Step "Checking prerequisites..."
 
 $Detected.NodeFound = Test-CommandExists 'node'
-$Detected.NodePath  = (Get-Command 'node' -ErrorAction SilentlyContinue).Source
+$Detected.NodePath  = $(if ($c = Get-Command 'node' -ErrorAction SilentlyContinue) { $c.Source })
 if ($Detected.NodeFound) {
     $nodeVer = & node --version 2>&1
     Write-Ok "Node.js $nodeVer at $($Detected.NodePath)"
